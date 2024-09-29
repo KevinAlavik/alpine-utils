@@ -1,0 +1,48 @@
+#!/bin/bash
+
+TOOL_NAME=$(basename "$1")
+INSTALL_PATH=${2:-/usr/local/bin}
+LIB_DIR="$INSTALL_PATH/_libs"
+
+get_privileged_cmd() {
+    if command -v sudo &> /dev/null; then
+        echo "sudo"
+    elif command -v doas &> /dev/null; then
+        echo "doas"
+    else
+        echo "no_privilege_command"
+    fi
+}
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <tool-path> [install-path]"
+    exit 1
+fi
+
+TOOL_PATH="$INSTALL_PATH/$TOOL_NAME"
+
+if [ ! -f "$TOOL_PATH" ]; then
+    echo -e "\e[31mError: Tool '${TOOL_NAME}' not found in '${INSTALL_PATH}'.\e[0m"
+    exit 1
+fi
+
+PRIVILEGED_CMD=$(get_privileged_cmd)
+if [[ "$PRIVILEGED_CMD" == "no_privilege_command" ]]; then
+    echo -e "\e[31mError: Neither 'sudo' nor 'doas' is available for elevated privileges.\e[0m"
+    exit 1
+fi
+
+$PRIVILEGED_CMD rm "$TOOL_PATH"
+echo -e "\e[32mRemoved tool: $TOOL_PATH\e[0m"
+
+if [ -d "$LIB_DIR" ]; then
+    for LIB_FILE in "$LIB_DIR/"*; do
+        if [ -f "$LIB_FILE" ]; then
+            $PRIVILEGED_CMD rm "$LIB_FILE"
+            echo -e "\e[32mRemoved library: $LIB_FILE\e[0m"
+        fi
+    done
+    rmdir "$LIB_DIR" 2>/dev/null || true
+fi
+
+echo -e "\e[32mUninstallation complete.\e[0m"
