@@ -1,0 +1,5 @@
+#!/bin/bash
+cd "$(dirname "$0")"
+
+source _libs/test.sh
+greet "Kevin"

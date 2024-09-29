@@ -1,3 +1,97 @@
 #!/bin/bash
 
-echo "Alpine Utils install script is work in progress..."
+ARCH=$(uname -m)
+TOOL=$1
+INSTALL_PATH=${2:-/usr/local/bin}
+
+get_privileged_cmd() {
+    if command -v sudo &> /dev/null; then
+        echo "sudo"
+    elif command -v doas &> /dev/null; then
+        echo "doas"
+    else
+        echo "no_privilege_command"
+    fi
+}
+
+if [ -z "$TOOL" ]; then
+    echo "Usage: $0 <tool-path> [install-path]"
+    exit 1
+fi
+
+CATEGORY=$(dirname "$TOOL")
+TOOL_NAME=$(basename "$TOOL")
+
+if [ ! -d "$CATEGORY" ]; then
+    echo -e "\e[31mError: Category '${CATEGORY}' not found. Are you sure that tool path is correct?\e[0m"
+    exit 1
+fi
+
+ARCHITECTURES=()
+for FILE in "${CATEGORY}/bin/${TOOL_NAME}."*; do
+    if [ -f "$FILE" ]; then
+        EXT="${FILE##*.}"
+        ARCHITECTURES+=("$EXT")
+    fi
+done
+
+TOOL_PATH=""
+if [ ${#ARCHITECTURES[@]} -eq 0 ]; then
+    echo -e "\e[31mError: No tools found for path '${TOOL}'\e[0m"
+    exit 1
+fi
+
+if [[ " ${ARCHITECTURES[@]} " =~ " ${ARCH} " ]]; then
+    TOOL_PATH="${CATEGORY}/bin/${TOOL_NAME}.${ARCH}"
+elif [[ " ${ARCHITECTURES[@]} " =~ " noarch " ]]; then
+    TOOL_PATH="${CATEGORY}/bin/${TOOL_NAME}.noarch"
+else
+    echo -e "\e[31mError: No suitable tool found for architecture '${ARCH}' in path '${TOOL}'\e[0m"
+    exit 1
+fi
+
+if file "$TOOL_PATH" | grep -q "ELF"; then
+    TOOL_KIND="ELF"
+else
+    TOOL_KIND="Script"
+fi
+
+case "$TOOL_KIND" in
+    ELF)
+        echo -e "\e[33mWarning: We can't handle pre-compiled binaries yet, resort to using a script like bash.\e[0m"
+        exit 1
+        ;;
+    Script)
+        chmod +x "$TOOL_PATH"
+        ;;
+    *)
+        echo -e "\e[31mError: Unknown tool type: $TOOL_KIND\e[0m"
+        exit 1
+        ;;
+esac
+
+LIB_DIR="${CATEGORY}/lib/${TOOL_NAME}"
+
+if [ -d "$LIB_DIR" ]; then
+    for LIB_FILE in "$LIB_DIR/"*; do
+        if [ -f "$LIB_FILE" ]; then
+            echo -e "\e[32mInstalling library: $LIB_FILE\e[0m"
+            PRIVILEGED_CMD=$(get_privileged_cmd)
+            if [[ "$PRIVILEGED_CMD" == "no_privilege_command" ]]; then
+                echo -e "\e[31mError: Neither 'sudo' nor 'doas' is available for elevated privileges.\e[0m"
+                exit 1
+            fi
+            $PRIVILEGED_CMD mkdir -p "$INSTALL_PATH/_libs"
+            $PRIVILEGED_CMD cp "$LIB_FILE" "$INSTALL_PATH/_libs"
+        fi
+    done
+fi
+
+PRIVILEGED_CMD=$(get_privileged_cmd)
+if [[ "$PRIVILEGED_CMD" == "no_privilege_command" ]]; then
+    echo -e "\e[31mError: Neither 'sudo' nor 'doas' is available for elevated privileges.\e[0m"
+    exit 1
+fi
+
+$PRIVILEGED_CMD cp "$TOOL_PATH" "$INSTALL_PATH/${TOOL_NAME}"
+echo -e "\e[32mInstalled tool to: $INSTALL_PATH/${TOOL_NAME}\e[0m"
